@@ -1,5 +1,7 @@
 # Zellular-DApps
 
+![Zellular Logo](./Images/Zellular.png)
+
 Welcome to **Zellular-DApps**, a collection of decentralized applications (dApps) built using [Zellular](https://docs.zellular.xyz), a decentralized sequencer designed for high-throughput, fault-tolerant consensus and messaging.
 
 ## About
