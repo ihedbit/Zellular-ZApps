@@ -115,6 +115,9 @@ def process_transfer(transaction):
     recipient_public_key = transaction['recipient']
     amount = int(transaction['amount'])
 
+    if not verify_transaction(transaction):
+        return jsonify({"message": "Invalid signature"}), 403
+
     sender_balance = Balance.query.filter_by(public_key=sender_public_key).first()
     recipient_balance = Balance.query.filter_by(public_key=recipient_public_key).first()
 
@@ -135,4 +138,3 @@ def process_transfer(transaction):
 if __name__ == '__main__':
     Thread(target=process_loop).start()
     app.run(debug=True)
-
