@@ -3,14 +3,17 @@ from flask_sqlalchemy import SQLAlchemy
 from ecdsa import VerifyingKey, SECP256k1, BadSignatureError
 import base64
 import requests
+import zellular
 from threading import Thread
 import time
+import json
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///token_transfers.db'
 app.config['SECRET_KEY'] = 'your_secret_key'
 db = SQLAlchemy(app)
-zsequencer_url = 'http://localhost:8323/node/transactions'
+base_url = "http://5.161.230.186:6001"
+app_name = "token_transfer"
 
 TOKEN_NAME = "ZellularToken"
 TOKEN_SYMBOL = "ZTK"
@@ -82,12 +85,16 @@ def transfer_tokens():
         return jsonify({"message": "Insufficient balance"}), 403
 
     # Add the transaction to Zellular sequencer
-    data = {
-        'transactions': [{'public_key': sender_public_key, 'recipient': recipient_public_key, 'amount': amount}],
-        'timestamp': int(time.time())
+    tx = {
+        "operation": "transfer",
+        "tx_id": str(uuid4()),  # Unique transaction ID
+        "public_key": sender_public_key,
+        "recipient": recipient_public_key,
+        "amount": amount,
+        "timestamp": int(time.time())
     }
-    headers = {"Content-Type": "application/json"}
-    zresponse = requests.put(zsequencer_url, json=data, headers=headers)
+    txs = [tx]
+    zresponse = requests.put(f"{base_url}/node/{app_name}/batches", json=txs)
 
     # Verify the response from Zellular
     if zresponse.status_code != 200:
@@ -97,21 +104,11 @@ def transfer_tokens():
 
 # Process finalized transactions from the Zellular sequencer
 def process_loop():
-    last = 0
-    while True:
-        params = {"after": last, "states": ["finalized"]}
-        response = requests.get(zsequencer_url, params=params)
-        finalized_txs = response.json().get("data")
-        if not finalized_txs:
-            time.sleep(1)
-            continue
-
-        last = max(tx["index"] for tx in finalized_txs)
-        sorted_numbers = sorted([t["index"] for t in finalized_txs])
-        print(f"\nReceived finalized indexes: [{sorted_numbers[0]}, ..., {sorted_numbers[-1]}]")
-
-        for tx in finalized_txs:
-            process_transfer(tx)
+    verifier = zellular.Verifier(app_name, base_url)
+    for batch, index in verifier.batches(after=0):
+        txs = json.loads(batch)
+        for i, tx in enumerate(txs):
+            process_transfer(tx)  # Process each transaction from the sequencer
 
 def process_transfer(transaction):
     sender_public_key = transaction['public_key']
