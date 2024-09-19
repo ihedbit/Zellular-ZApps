@@ -1,28 +1,27 @@
-
 # Token Transfer System Using Zellular Sequencer
 
-This document outlines a simple token transfer system implemented using Zellular for consensus and sequencing. The system allows users to transfer tokens between each other in a secure and decentralized manner.
+This document outlines a token transfer system implemented using Zellular for decentralized consensus and sequencing. The system allows users to securely transfer tokens between accounts, with Zellular ensuring the correct order and finality of transactions.
 
 ## 1. Introduction
 
-In this implementation, each user starts with a default balance of 10 tokens. Users can transfer tokens to other users using their public keys. The transfer of tokens is processed through the Zellular sequencer, which ensures that transactions are handled in a secure, fault-tolerant, and decentralized way.
+In this system, each user begins with a predefined balance, and they can transfer tokens to other users by submitting transactions to the Zellular sequencer. Zellular ensures that all transactions are handled in a secure and fault-tolerant manner by finalizing transactions in the correct order.
 
-This guide walks through the implementation details, including the API endpoints, Zellular integration, and signature verification.
+This document provides an overview of the system’s architecture, API endpoints, Zellular integration, and signature verification.
 
 ### 2. System Architecture
 
-- **Flask**: Used to implement the API that users interact with.
+- **Flask**: Serves as the framework for implementing the API.
 - **SQLite**: Used for storing user balances.
-- **Zellular**: A decentralized sequencer is used to achieve Byzantine Fault Tolerance (BFT) and ensure the correct order of transactions.
-- **ECDSA**: Used to verify signatures for secure token transfers.
+- **Zellular**: A decentralized sequencer used to ensure Byzantine Fault Tolerance (BFT) and correct transaction sequencing.
+- **ECDSA**: Provides cryptographic signature verification to ensure secure transfers.
 
 ### 3. How It Works
 
 #### Token Transfer Overview
-Each user has a public/private key pair. Users can transfer tokens by signing a transaction that includes the recipient’s public key and the amount to be transferred. The transaction is forwarded to the Zellular sequencer for consensus and finalization.
+Each user has a public/private key pair. To initiate a transfer, the sender signs a transaction that includes the recipient’s public key and the amount to transfer. The signed transaction is sent to the Zellular sequencer, which ensures that it is properly ordered and finalized.
 
-#### Consensus Using Zellular
-Zellular ensures the correct ordering of transactions and that all participants have a consistent view of finalized transactions. Once the sequencer finalizes a transaction, it updates the balances of the sender and recipient in the local SQLite database.
+#### Zellular Sequencing and Consensus
+Zellular ensures that all transactions are processed in the correct order and finalizes them in a decentralized manner. Once a transaction is finalized by Zellular, the system updates the balances of the sender and the recipient in the local SQLite database.
 
 ### 4. API Endpoints
 
@@ -32,8 +31,8 @@ This endpoint allows users to initiate a token transfer.
 ##### Parameters:
 - **public_key**: The public key of the sender (base64 encoded).
 - **recipient**: The public key of the recipient (base64 encoded).
-- **amount**: The amount of tokens to be transferred.
-- **signature**: The signature of the transaction (base64 encoded).
+- **amount**: The amount of tokens to transfer.
+- **signature**: The cryptographic signature of the transaction (base64 encoded).
 
 ##### Example Request:
 
@@ -41,7 +40,7 @@ This endpoint allows users to initiate a token transfer.
 POST /transfer HTTP/1.1
 Content-Type: application/x-www-form-urlencoded
 
-public_key=<sender_public_key>&recipient=<recipient_public_key>&amount=5&signature=<signed_transaction>
+public_key=<sender_public_key>&recipient=<recipient_public_key>&amount=1000&signature=<signed_transaction>
 ```
 
 ##### Example Response:
@@ -52,28 +51,28 @@ public_key=<sender_public_key>&recipient=<recipient_public_key>&amount=5&signatu
 }
 ```
 
-The request will fail if the signature is invalid or if the sender does not have enough tokens.
+If the signature is invalid or the sender has insufficient balance, the request will fail.
 
 ##### Error Responses:
 - **403 Forbidden**: If the signature is invalid or if the sender has insufficient tokens.
 
 ### 5. Zellular Sequencer Integration
 
-The system integrates with the Zellular sequencer to ensure transaction order and finality. After a user initiates a transfer, the transaction is sent to the Zellular sequencer via a `PUT` request.
+The system sends each token transfer to the Zellular sequencer to ensure the transaction is included in the correct order. The following example shows how a transaction is submitted to the sequencer:
 
 ```python
 data = {
     'transactions': [{'public_key': sender_public_key, 'recipient': recipient_public_key, 'amount': amount}],
     'timestamp': int(time.time())
 }
-requests.put(zsequencer_url, json=data, headers=headers)
+requests.put(f"{base_url}/node/{app_name}/batches", json=data, headers=headers)
 ```
 
-The Zellular sequencer processes the transaction and returns a finalized result. Once the transaction is finalized, the system updates the balances for the sender and recipient.
+The Zellular sequencer finalizes the transaction and ensures that all participants have the same view of the transaction order. The balances of the sender and recipient are only updated after Zellular has finalized the transaction.
 
 ### 6. Signature Verification
 
-The system uses ECDSA with the SECP256k1 curve for signature verification. Each transaction is signed by the sender using their private key. The system verifies the transaction by checking the signature against the sender's public key.
+To ensure that only valid transactions are processed, the system uses ECDSA with the SECP256k1 curve for signature verification. Each transaction is signed by the sender using their private key, and the signature is verified against the sender’s public key before processing.
 
 ```python
 def verify_transaction(transaction):
@@ -90,7 +89,7 @@ def verify_transaction(transaction):
 
 ### 7. Balance Updates
 
-Once a transaction is finalized, the balances of the sender and recipient are updated:
+Once Zellular finalizes a transaction, the system updates the balances of both the sender and recipient. The sender’s balance is reduced, and the recipient’s balance is increased by the amount of tokens transferred.
 
 ```python
 def process_transfer(transaction):
@@ -113,30 +112,20 @@ def process_transfer(transaction):
 
 ### 8. Polling the Zellular Sequencer
 
-The system continuously polls the Zellular sequencer for finalized transactions. Finalized transactions are then processed to update user balances.
+The system continuously polls the Zellular sequencer to retrieve finalized transactions. Once transactions are finalized, they are processed to update the user balances.
 
 ```python
 def process_loop():
-    last = 0
-    while True:
-        params = {"after": last, "states": ["finalized"]}
-        response = requests.get(zsequencer_url, params=params)
-        finalized_txs = response.json().get("data")
-        if not finalized_txs:
-            time.sleep(1)
-            continue
-
-        last = max(tx["index"] for tx in finalized_txs)
-        sorted_numbers = sorted([t["index"] for t in finalized_txs])
-        print(f"Received finalized indexes: [{sorted_numbers[0]}, ..., {sorted_numbers[-1]}]")
-
-        for tx in finalized_txs:
+    verifier = zellular.Verifier(app_name, base_url)
+    for batch, index in verifier.batches(after=0):
+        txs = json.loads(batch)
+        for tx in txs:
             process_transfer(tx)
 ```
 
 ### 9. Running the System
 
-To run the system, ensure that you have Zellular running as a sequencer and then start the Flask application. The application will automatically begin processing transactions once they are finalized by Zellular.
+To run the system, ensure that the Zellular sequencer is running and configured properly. Afterward, start the Flask application to begin processing transactions. The system will automatically retrieve finalized transactions from the Zellular sequencer.
 
 ```bash
 python app.py
@@ -144,4 +133,4 @@ python app.py
 
 ### 10. Conclusion
 
-This simple token transfer system demonstrates how Zellular can be integrated to sequence and finalize transactions in a decentralized manner. By using Zellular for consensus, we ensure fault tolerance and correctness in token transfers. The system can be expanded to include more complex features, such as token minting, multi-signature wallets, or decentralized exchanges.
+This token transfer system demonstrates how to integrate Zellular to sequence and finalize transactions in a decentralized and secure manner. Using Zellular ensures that all token transfers are properly ordered, verified, and finalized in a fault-tolerant way. This system can be expanded with additional features such as token minting, multi-signature wallets, and decentralized exchanges.
