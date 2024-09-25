@@ -14,7 +14,7 @@ app.config['SECRET_KEY'] = 'your_secret_key'
 db = SQLAlchemy(app)
 base_url = "http://5.161.230.186:6001"
 app_name = "token_transfer"
-
+genesis_address = "your_genesis_public_key_base64"  # Replace with actual base64-encoded public key
 TOKEN_NAME = "ZellularToken"
 TOKEN_SYMBOL = "ZTK"
 TOKEN_DECIMALS = 18
@@ -29,7 +29,6 @@ class Balance(db.Model):
 def create_tables():
     db.create_all()
     # Initialize one address with 1 billion tokens
-    genesis_address = "your_genesis_public_key_base64"  # Replace with actual base64-encoded public key
     if not Balance.query.filter_by(public_key=genesis_address).first():
         genesis_balance = Balance(public_key=genesis_address, amount=TOTAL_SUPPLY)
         db.session.add(genesis_balance)
