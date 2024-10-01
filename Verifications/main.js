@@ -36,16 +36,6 @@ function saveTransactionInMemory(transactionData) {
     transactions.push(transactionData);
 }
 
-// Saving transaction to a file (persistent storage)
-function saveTransactionToFile(transactionData) {
-    const transactionJSON = JSON.stringify(transactionData);
-    fs.appendFileSync('transactions.txt', transactionJSON + '\n', (err) => {
-        if (err) {
-            console.error('Error saving transaction to file:', err);
-        }
-    });
-}
-
 // Example workflow to verify, send, verify again, and save
 async function processTransaction(transactionData, signature, publicKey) {
     // Step 1: Verify the transaction using ECDSA
@@ -75,7 +65,6 @@ async function processTransaction(transactionData, signature, publicKey) {
 
     // Step 4: Save the verified transaction in both in-memory and file
     saveTransactionInMemory(receivedTransaction);
-    saveTransactionToFile(receivedTransaction);
 
     console.log("Transaction saved successfully.");
 }

@@ -31,14 +31,6 @@ def verify_received_transaction(received_transaction_data, signature, public_key
 def save_transaction_in_memory(transaction_data):
     transactions.append(transaction_data)
 
-# Saving transaction to a file (persistent storage)
-def save_transaction_to_file(transaction_data):
-    try:
-        with open("transactions.txt", "a") as file:
-            file.write(f"{json.dumps(transaction_data)}\n")
-    except Exception as e:
-        print(f"Error saving transaction to file: {e}")
-
 # Example workflow to verify, send, verify again, and save
 def process_transaction(transaction_data, signature, public_key):
     # Step 1: Verify the transaction using ECDSA
@@ -65,7 +57,6 @@ def process_transaction(transaction_data, signature, public_key):
     
     # Step 4: Save the verified transaction in both in-memory and file
     save_transaction_in_memory(received_transaction)
-    save_transaction_to_file(received_transaction)
     print("Transaction saved successfully.")
 
 # Example transaction data

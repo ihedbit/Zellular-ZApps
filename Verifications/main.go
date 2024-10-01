@@ -63,22 +63,6 @@ func saveTransactionInMemory(transactionData map[string]interface{}) {
 	transactions = append(transactions, transactionData)
 }
 
-// Saving transaction to a file (persistent storage)
-func saveTransactionToFile(transactionData map[string]interface{}) error {
-	file, err := os.OpenFile("transactions.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	data, err := json.Marshal(transactionData)
-	if err != nil {
-		return err
-	}
-
-	_, err = file.WriteString(string(data) + "\n")
-	return err
-}
 
 // Example workflow to verify, send, verify again, and save
 func processTransaction(transactionData map[string]interface{}, signatureR, signatureS, pubKeyX, pubKeyY *big.Int) {
@@ -109,11 +93,7 @@ func processTransaction(transactionData map[string]interface{}, signatureR, sign
 
 	// Step 4: Save the verified transaction in both in-memory and file
 	saveTransactionInMemory(receivedTransaction)
-	err = saveTransactionToFile(receivedTransaction)
-	if err != nil {
-		fmt.Println("Error saving transaction to file:", err)
-		return
-	}
+	
 
 	fmt.Println("Transaction saved successfully.")
 }
