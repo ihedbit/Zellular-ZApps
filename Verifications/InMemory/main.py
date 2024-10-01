@@ -1,3 +1,4 @@
+import time
 import json
 import requests
 from ecdsa import VerifyingKey, SECP256k1, BadSignatureError
@@ -59,6 +60,21 @@ def process_transaction(transaction_data, signature, public_key):
     save_transaction_in_memory(received_transaction)
     print("Transaction saved successfully.")
 
+# Performance testing function
+def performance_test(transaction_data, signature, public_key, duration=1):
+    start_time = time.time()
+    count = 0
+
+    # Perform verifications for the specified duration (in seconds)
+    while time.time() - start_time < duration:
+        # Step 1: Verify the transaction using ECDSA
+        verify_transaction(transaction_data['data'], signature, public_key)
+        count += 1
+
+    elapsed_time = time.time() - start_time
+    print(f"Performed {count} verifications in {elapsed_time:.2f} seconds.")
+    print(f"Verifications per second: {count / elapsed_time:.2f}")
+
 # Example transaction data
 transaction_data = {
     "data": "Transfer 10 tokens from A to B",
@@ -71,5 +87,9 @@ transaction_data = {
 signature = "3045022100e8b5..."  # This should be the actual signature in hex
 public_key = "04bfcf0e7c..."  # This should be the actual public key in hex
 
-# Processing the transaction
-process_transaction(transaction_data, signature, public_key)
+# Performance testing for 1 second duration
+performance_test(transaction_data, signature, public_key, duration=1)
+
+# You can also process the transaction normally if needed
+# process_transaction(transaction_data, signature, public_key)
+

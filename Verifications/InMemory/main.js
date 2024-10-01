@@ -69,6 +69,23 @@ async function processTransaction(transactionData, signature, publicKey) {
     console.log("Transaction saved successfully.");
 }
 
+// Performance testing function
+function performanceTest(transactionData, signature, publicKey, duration = 1) {
+    const startTime = Date.now();
+    let count = 0;
+
+    // Perform verifications for the specified duration (in milliseconds)
+    while (Date.now() - startTime < duration * 1000) {
+        // Step 1: Verify the transaction using ECDSA
+        verifyTransaction(transactionData.data, signature, publicKey);
+        count++;
+    }
+
+    const elapsedTime = (Date.now() - startTime) / 1000; // Convert to seconds
+    console.log(`Performed ${count} verifications in ${elapsedTime.toFixed(2)} seconds.`);
+    console.log(`Verifications per second: ${(count / elapsedTime).toFixed(2)}`);
+}
+
 // Example usage:
 
 // Example transaction data
@@ -81,11 +98,15 @@ const transactionData = {
 
 // Example signature and public key (hex format)
 const signature = {
-    r: "aef00c1f..." ,  // Replace with actual r component of the signature
-    s: "b12d34e5..."    // Replace with actual s component of the signature
+    r: "aef00c1f...",  // Replace with actual r component of the signature
+    s: "b12d34e5..."   // Replace with actual s component of the signature
 };
 
 const publicKey = "04bfcf0e7c...";  // Replace with actual public key in hex
 
-// Process the transaction
-processTransaction(transactionData, signature, publicKey);
+// Performance testing for 1 second duration
+performanceTest(transactionData, signature, publicKey, 1);
+
+// You can also process the transaction normally if needed
+// processTransaction(transactionData, signature, publicKey);
+

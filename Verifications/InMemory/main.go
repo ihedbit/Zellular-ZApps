@@ -7,10 +7,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/http"
-	"os"
+	"time"
 )
 
 // In-memory storage for transactions
@@ -63,6 +62,24 @@ func saveTransactionInMemory(transactionData map[string]interface{}) {
 	transactions = append(transactions, transactionData)
 }
 
+// Performance testing function for ECDSA verification
+func performanceTest(transactionData string, signatureR, signatureS, pubKeyX, pubKeyY *big.Int, durationSeconds int) {
+	startTime := time.Now()
+	count := 0
+
+	for {
+		if time.Since(startTime).Seconds() >= float64(durationSeconds) {
+			break
+		}
+		// Step 1: Verify the transaction using ECDSA
+		verifyTransaction(transactionData, signatureR, signatureS, pubKeyX, pubKeyY)
+		count++
+	}
+
+	elapsedTime := time.Since(startTime).Seconds()
+	fmt.Printf("Performed %d verifications in %.2f seconds\n", count, elapsedTime)
+	fmt.Printf("Verifications per second: %.2f\n", float64(count)/elapsedTime)
+}
 
 // Example workflow to verify, send, verify again, and save
 func processTransaction(transactionData map[string]interface{}, signatureR, signatureS, pubKeyX, pubKeyY *big.Int) {
@@ -93,8 +110,6 @@ func processTransaction(transactionData map[string]interface{}, signatureR, sign
 
 	// Step 4: Save the verified transaction in both in-memory and file
 	saveTransactionInMemory(receivedTransaction)
-	
-
 	fmt.Println("Transaction saved successfully.")
 }
 
@@ -113,6 +128,10 @@ func main() {
 	pubKeyX := big.NewInt(9876543210)    // Replace with actual X coordinate of the public key
 	pubKeyY := big.NewInt(1234567890)    // Replace with actual Y coordinate of the public key
 
+	// Run performance test for 1 second
+	performanceTest(transactionData["data"].(string), signatureR, signatureS, pubKeyX, pubKeyY, 1)
+
 	// Process the transaction
 	processTransaction(transactionData, signatureR, signatureS, pubKeyX, pubKeyY)
 }
+
