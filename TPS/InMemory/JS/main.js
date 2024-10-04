@@ -1,118 +1,112 @@
 const axios = require('axios');
-const { ec: EC } = require('elliptic');
-const ec = new EC('secp256k1');
+const fs = require('fs');
 
-// In-memory storage for transactions
-const transactions = [];
+// Initialize balances with a Genesis Address
+let balance = { "GENESIS": 1000000000 };
+let processedTransactions = [];
+const batchSize = 100;  // Number of transactions to send in one batch
 
-// ECDSA transaction verification function
+// ECDSA transaction verification function (stubbed for simplicity)
 function verifyTransaction(transactionData, signature, publicKey) {
+    // Assuming all transactions are valid for this test
     return true;
-    try {
-        const key = ec.keyFromPublic(publicKey, 'hex');
-        const msgHash = Buffer.from(transactionData, 'utf8'); // Convert message to buffer
-        return key.verify(msgHash, signature);
-    } catch (error) {
-        console.error('Error during signature verification:', error);
-        return false;
-    }
 }
 
-// Sending transaction to echo server
-async function sendTransactionToServer(transactionData) {
+// Sending batch transactions to the server
+async function sendBatchToServer(batchTransactions) {
     try {
-        const response = await axios.post('http://127.0.0.1:5000/echo', transactionData);
+        const response = await axios.post("http://127.0.0.1:8000/echo", batchTransactions);
         return response.data;
     } catch (error) {
-        console.error(`Error sending transaction to server: ${error}`);
+        console.error("Error sending batch transactions to server:", error);
         return null;
     }
 }
 
-// Verifying received transaction from server
-function verifyReceivedTransaction(receivedTransactionData, signature, publicKey) {
-    return true;
-    // return verifyTransaction(receivedTransactionData, signature, publicKey);
+// Adding transaction to in-memory storage and updating balances
+function processTransaction(transactionData) {
+    const sender = transactionData.from;
+    const recipient = transactionData.to;
+    const amount = transactionData.amount;
+
+    // Ensure sender has enough balance
+    if ((balance[sender] || 0) >= amount) {
+        // Update balance for sender and recipient
+        balance[sender] = (balance[sender] || 0) - amount;
+        balance[recipient] = (balance[recipient] || 0) + amount;
+
+        // Store the processed transaction
+        processedTransactions.push(transactionData);
+    } else {
+        console.log(`Transaction from ${sender} to ${recipient} for ${amount} tokens rejected: Insufficient balance.`);
+    }
 }
 
-// Saving transaction to in-memory storage
-function saveTransactionInMemory(transactionData) {
-    transactions.push(transactionData);
+// Generate a new address
+function generateAddress() {
+    return Array.from({ length: 5 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
 }
 
-// Example workflow to verify, send, verify again, and save
-async function processTransaction(transactionData, signature, publicKey) {
-    // Step 1: Verify the transaction using ECDSA
-    if (!verifyTransaction(transactionData.data, signature, publicKey)) {
-        console.log('Transaction verification failed.');
-        return;
-    }
+// Generate sample transaction data
+function generateSampleTransaction() {
+    const sender = generateAddress();
+    const recipient = generateAddress();
+    const amount = Math.floor(Math.random() * 100) + 1;
 
-    // Step 2: Send transaction to the echo server and get the response
-    const receivedTransaction = await sendTransactionToServer(transactionData);
-    if (!receivedTransaction) {
-        console.log('Failed to receive transaction from server.');
-        return;
-    }
+    // If sender doesn't exist in balance, initialize it with zero
+    if (!(sender in balance)) balance[sender] = 0;
+    if (!(recipient in balance)) balance[recipient] = 0;
 
-    // Step 3: Verify the received transaction again
-    if (!verifyReceivedTransaction(receivedTransaction.data, signature, publicKey)) {
-        console.log('Received transaction verification failed.');
-        return;
-    }
-
-    // Step 4: Save the verified transaction in-memory
-    saveTransactionInMemory(receivedTransaction);
+    return {
+        data: `Transfer ${amount} tokens from ${sender} to ${recipient}`,
+        from: sender,
+        to: recipient,
+        amount: amount
+    };
 }
 
-// Performance testing function for transactions sent and verified
-async function performanceTest(transactionData, signature, publicKey, duration = 1) {
+// Performance testing function
+async function performanceTest(signature, publicKey, batchSize = 100) {
+    // Step 1: Generate a batch of transactions, using the Genesis Address as the primary funder
+    const batchTransactions = [];
+    for (let i = 0; i < batchSize; i++) {
+        // Use Genesis as the sender for initial transactions if needed
+        const transactionData = generateSampleTransaction();
+        transactionData.from = "GENESIS";
+        
+        // Only add valid transactions with sufficient balance to the batch
+        if (balance["GENESIS"] >= transactionData.amount) {
+            if (verifyTransaction(transactionData.data, signature, publicKey)) {
+                batchTransactions.push(transactionData);
+            }
+        }
+    }
+
+    // Step 2: Send the batch to the server
     const startTime = Date.now();
-    let count = 0;
+    const response = await sendBatchToServer(batchTransactions);
 
-    // Perform verifications for the specified duration (in milliseconds)
-    while (Date.now() - startTime < duration * 1000) {
-        // Step 1: Verify the transaction using ECDSA
-        if (!verifyTransaction(transactionData.data, signature, publicKey)) {
-            console.log('Transaction verification failed.');
-            return;
-        }
-
-        // Step 2: Send transaction to the server and get the response
-        const receivedTransaction = await sendTransactionToServer(transactionData);
-        if (!receivedTransaction) {
-            console.log('Failed to receive transaction from server.');
-            return;
-        }
-
-        // Step 3: Verify the received transaction
-        if (!verifyReceivedTransaction(receivedTransaction.data, signature, publicKey)) {
-            console.log('Received transaction verification failed.');
-            return;
-        }
-
-        // Step 4: Save the transaction in memory
-        saveTransactionInMemory(receivedTransaction);
-
-        count += 1; // Increment transaction count
+    // Step 3: Process each transaction in the received batch
+    if (response && response.data) {
+        response.data.forEach(transaction => processTransaction(transaction));
     }
 
+    // Calculate performance
     const elapsedTime = (Date.now() - startTime) / 1000;
-    console.log(`Processed ${count} transactions in ${elapsedTime.toFixed(2)} seconds.`);
-    console.log(`Transactions per second: ${(count / elapsedTime).toFixed(2)}`);
+    console.log(`Processed ${processedTransactions.length} transactions in ${elapsedTime.toFixed(2)} seconds.`);
+    console.log(`Transactions per second: ${(processedTransactions.length / elapsedTime).toFixed(2)}`);
+
+    // Save processed transactions and balances to files
+    fs.writeFileSync("processed_transactions.json", JSON.stringify(processedTransactions, null, 4));
+    fs.writeFileSync("balances.json", JSON.stringify(balance, null, 4));
+
+    console.log("Processed transactions saved to 'processed_transactions.json'.");
+    console.log("Balances saved to 'balances.json'.");
 }
 
-// Example transaction data
-const transactionData = {
-    data: 'Transfer 10 tokens from A to B',
-    from: 'A',
-    to: 'B',
-    amount: 10
-};
+// Example signature and public key (stubbed for simplicity)
+const signature = "sample_signature";
+const publicKey = "sample_public_key";
 
-// Example signature and public key (hex format)
-const signature = '3045022100e8b5b9a1e8a73bf7f0c3ae3d77d8f62e41ad3cda4a67db2f5f01236496a0ed9c02206d98e42c12ab11f1f9b358e80b03b9b514cd4ba93513b3c2e34fd272b3571b38';
-const publicKey = '04bfcf0e7ca431899b324be76b89ac9815cda5fdf31b7a60a69c4bcb5fda59d9e8f19f622f1f7adfd1c65e988d148d4e67a740d4b9b94ac96f9c0b44631569b3d8';
-
-// Performance testing for 1 second duration
-performanceTest(transactionData, signature, publicKey, 1);
+// Run the performance test
+performanceTest(signature, publicKey, batchSize);
