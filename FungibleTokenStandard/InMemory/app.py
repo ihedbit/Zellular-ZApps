@@ -26,7 +26,7 @@ balances = {}
 variables = {}
 
 # Function to initialize the system
-@app.before_first_request
+@app.before_request
 def initialize():
     # Initialize genesis address with total supply
     if GENESIS_ADDRESS not in balances:
