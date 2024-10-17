@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from ecdsa import VerifyingKey, SECP256k1, BadSignatureError
-from zellular import Zellular
+from zellular import Zellular , get_operators
 from threading import Thread
 from uuid import uuid4
 import base64
@@ -13,13 +13,20 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
+
+
+
 #-------------------------------------
-BASE_URLS = [
-    "http://5.161.230.186:6001",
-    "http://another-url-1:6001",
-    "http://another-url-2:6001"
-]
-APP_NAME = "token_transfer"
+# Fetch the list of operators and extract their socket URLs
+def get_operator_urls():
+    operators = get_operators()
+    sockets = [op["socket"] for op in operators.values() if "socket" in op]
+    return sockets
+
+#-------------------------------------
+# Initialize the BASE_URLS dynamically from the fetched operators
+BASE_URLS = get_operator_urls()
+APP_NAME = "APP_NAME"
 GENESIS_ADDRESS = "your_genesis_public_key_base64"  # Replace with actual base64-encoded public key
 TOKEN_NAME = "ZellularToken"
 TOKEN_SYMBOL = "ZTK"
@@ -35,16 +42,36 @@ zellular = Zellular(APP_NAME, BASE_URLS[0])
 balances = {}
 variables = {}
 
+
+# Function to check if files exist and load them
+def load_files():
+    # Load balances file if it exists
+    if os.path.exists(BALANCES_FILE):
+        with open(BALANCES_FILE, 'r') as f:
+            global balances
+            balances = json.load(f)
+            print("Balances loaded from file.")
+    else:
+        # Initialize genesis address with total supply if file doesn't exist
+        balances[GENESIS_ADDRESS] = TOTAL_SUPPLY
+        print("Balances file not found, created with genesis address.")
+
+    # Load variables file if it exists
+    if os.path.exists(VARIABLES_FILE):
+        with open(VARIABLES_FILE, 'r') as f:
+            global variables
+            variables = json.load(f)
+            print("Variables loaded from file.")
+    else:
+        # Initialize default variables
+        variables["last_process_indexes"] = 0
+        print("Variables file not found, initialized with default values.")
+
 # Function to initialize the system
 @app.before_request
 def initialize():
-    # Initialize genesis address with total supply
-    if GENESIS_ADDRESS not in balances:
-        balances[GENESIS_ADDRESS] = TOTAL_SUPPLY
-    
-    # Initialize last process index
-    if "last_process_indexes" not in variables:
-        variables["last_process_indexes"] = 0
+    load_files()
+
 
 # Function to verify signatures
 def verify(tx):
@@ -58,6 +85,7 @@ def verify(tx):
         return False
     return True
 
+
 # Function to calculate the hash of a file
 def calculate_file_hash(filepath):
     hasher = hashlib.sha256()
@@ -65,6 +93,7 @@ def calculate_file_hash(filepath):
         buf = f.read()
         hasher.update(buf)
     return hasher.hexdigest()
+
 
 # Function to fetch the latest balances file from a random URL
 def fetch_latest_balances():
@@ -80,6 +109,7 @@ def fetch_latest_balances():
         print(f"Error fetching balances: {e}")
         return None
 
+
 # Function to replay transactions to update balances
 def replay_transactions(latest_transactions):
     for tx in latest_transactions:
@@ -87,6 +117,7 @@ def replay_transactions(latest_transactions):
             _transfer(tx)
         else:
             print("Invalid transaction", tx)
+
 
 # ERC-20 like token details
 @app.route('/info', methods=['GET'])
@@ -98,12 +129,14 @@ def info():
         "decimals": TOKEN_DECIMALS
     })
 
+
 # Retrieve balance of an address
 @app.route('/balance_of', methods=['GET'])
 def balance_of():
     public_key = request.args.get('public_key')
     balance = balances.get(public_key, 0)
     return jsonify({"balance": balance})
+
 
 # Token transfer endpoint
 @app.route('/transfer', methods=['POST'])
@@ -129,6 +162,7 @@ def transfer():
 
     return {'success': True}
 
+
 # Process finalized txs from the Zellular sequencer
 def process_txs():
     while True:
@@ -142,6 +176,7 @@ def process_txs():
             # Update last processed index
             variables["last_process_indexes"] = index
         time.sleep(1)  # Adjust the interval if necessary
+
 
 def _transfer(tx):
     if not verify(tx):
@@ -163,55 +198,30 @@ def _transfer(tx):
     balances[sender_public_key] = sender_balance - amount
     balances[recipient_public_key] = recipient_balance + amount
 
-# Periodic check function
-def periodic_check(interval=60):
+
+# Periodic JSON dump function based on height(txs count in this case) divisible by 100000
+def dump_json_on_height():
     while True:
-        # Calculate the hash of the local balances file
-        local_hash = calculate_file_hash(BALANCES_FILE)
+        # Get the current height from variables
+        current_height = variables.get("height", 0)
 
-        # Fetch the latest balances from a random URL
-        latest_balances = fetch_latest_balances()
-        if latest_balances:
-            # Calculate the hash of the fetched balances
-            latest_hash = hashlib.sha256(json.dumps(latest_balances).encode('utf-8')).hexdigest()
+        if current_height % 100000 == 0:
+            # Dump balances and variables to a JSON file
+            with open(BALANCES_FILE, 'w') as f:
+                json.dump(balances, f)
+            with open(VARIABLES_FILE, 'w') as f:
+                json.dump(variables, f)
+            print(f"Data dumped to JSON files at height {current_height}.")
 
-            if local_hash != latest_hash:
-                print("Hashes do not match, updating balances...")
+        # Increment height for testing purposes (this should reflect the actual network height)
+        variables["height"] = current_height + 1
+        time.sleep(1)  # Adjust the interval if necessary
 
-                # Get the last transaction time from the fetched balances
-                last_transaction_time = variables.get("last_transaction_time", 0)
-                latest_transaction_time = latest_balances.get("last_transaction_time", 0)
-
-                if last_transaction_time < latest_transaction_time:
-                    # Fetch and replay missing transactions
-                    missing_txs = fetch_missing_transactions(last_transaction_time)
-                    replay_transactions(missing_txs)
-
-        time.sleep(interval)
-
-# Dummy function to simulate fetching missing transactions
-def fetch_missing_transactions(after_timestamp):
-    # This function should return transactions from the network sequencer after the given timestamp
-    # For example purposes, it returns an empty list
-    return []
-
-# Periodic JSON dump function
-def dump_json_periodically(interval=60):
-    while True:
-        # Dump balances and variables to a JSON file
-        with open(BALANCES_FILE, 'w') as f:
-            json.dump(balances, f)
-        with open(VARIABLES_FILE, 'w') as f:
-            json.dump(variables, f)
-        print("Data dumped to JSON files.")
-        time.sleep(interval)
 
 if __name__ == '__main__':
     # Start the transaction processing thread
     Thread(target=process_txs, daemon=True).start()
-    # Start the periodic JSON dump thread
-    Thread(target=dump_json_periodically, args=(60,), daemon=True).start()
-    # Start the periodic check thread
-    Thread(target=periodic_check, args=(60,), daemon=True).start()
+    # Start the periodic JSON dump thread based on height
+    Thread(target=dump_json_on_height, daemon=True).start()
     # Run the Flask app
     app.run(debug=True)
