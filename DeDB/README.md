@@ -1,10 +1,6 @@
-Here's a draft for your `README.md` file:
-
----
-
 # Decentralized Node Downtime Monitoring System
 
-This project leverages the **Zellular Infrastructure** to implement a decentralized system for monitoring the uptime and downtime of AVS nodes. It ensures consensus among all nodes and uses Zellular sequencer for decentralized database replication and proof verification.
+This project leverages the **Zellular Infrastructure** to implement a decentralized system for monitoring the uptime and downtime of AVS nodes. It ensures consensus among all nodes and uses Zellular sequencer for decentralized database replication.
 
 ---
 
@@ -22,7 +18,6 @@ This project leverages the **Zellular Infrastructure** to implement a decentrali
    - Submits the downtime logs and proofs to the Zellular sequencer.
 
 3. **Zellular Sequencer Integration**:
-   - Acts as a decentralized task manager for replicating validated data.
    - Ensures all nodes share the same sequence of downtime/uptime events.
 
 4. **Consensus & Decentralization**:
@@ -121,23 +116,8 @@ Each operator node maintains a local SQLite database to log the downtime/uptime 
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd decentralized-node-monitor
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Run Operator Node
-```bash
-python operator.py
-```
-
-### 4. Run Aggregator
-```bash
-python aggregator.py
+git clone git@github.com:ihedbit/Zellular-ZApps.git
+cd DeDB
 ```
 
 ---
@@ -156,7 +136,3 @@ Feel free to contribute to the project by submitting issues or pull requests.
 
 ## License
 This project is licensed under the MIT License.
-
---- 
-
-Let me know if you need further refinements!
