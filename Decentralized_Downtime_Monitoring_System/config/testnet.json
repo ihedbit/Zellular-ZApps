@@ -1,0 +1,7 @@
+{
+  "network": "testnet",
+  "rpc_url": "https://goerli.infura.io/v3/YOUR_PROJECT_ID",
+  "chain_id": 5,
+  "deployer_private_key": "YOUR_PRIVATE_KEY",
+  "gas_price": "20000000000"
+}
