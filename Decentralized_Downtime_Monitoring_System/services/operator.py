@@ -25,6 +25,29 @@ OPERATORS = get_operators()  # Fetch the list of operators
 BASE_URLS = [op["socket"] for op in OPERATORS.values() if "socket" in op]
 zellular = Zellular(APP_NAME, BASE_URLS[0])
 
+# Hardcoded operator details
+OPERATORS = {
+    "operator_1": {
+        "socket": "http://127.0.0.1:5001",  # Example socket
+        "public_key": "abcd1234..."  # Replace with the actual public key in hex
+    },
+    "operator_2": {
+        "socket": "http://127.0.0.1:5002",
+        "public_key": "efgh5678..."
+    },
+    "aggregator": {
+        "socket": "http://127.0.0.1:5002",
+        "public_key": "efgh5678..."
+    },
+    # Add more operators as needed
+}
+
+# Hardcoded aggregator details
+AGGREGATOR = {
+    "socket": "http://127.0.0.1:5002",
+    "public_key": "efgh5678..."
+}
+
 # Initialize the SQLite database
 def init_db():
     conn = sqlite3.connect(DATABASE)
@@ -35,28 +58,35 @@ def init_db():
             node_id TEXT NOT NULL,
             status TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
-            signature TEXT NOT NULL
+            signature TEXT NOT NULL,
+            aggregated_public_key TEXT NOT NULL,
+            signers TEXT NOT NULL
         )
     ''')
     conn.commit()
     conn.close()
 
 # Log the node state to SQLite
-def log_state(node_id, status, timestamp, signature):
+def log_state(node_id, status, timestamp, signature, aggregated_public_key, signers):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
+    
+    # Serialize the signers list as a JSON string
+    signers_json = json.dumps(signers)
+    
     cursor.execute('''
-        INSERT INTO logs (node_id, status, timestamp, signature)
-        VALUES (?, ?, ?, ?)
-    ''', (node_id, status, timestamp, signature))
+        INSERT INTO logs (node_id, status, timestamp, signature, aggregated_public_key, signers)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (node_id, status, timestamp, signature, aggregated_public_key, signers_json))
+    
     conn.commit()
     conn.close()
 
 # Verify a proof from the sequencer
-def verify_message(message, signature, signer):
+def verify_message(message, signature):
     try:
         signature_bytes = base64.b64decode(signature)
-        signer_key = G2Element.from_bytes(bytes.fromhex(signer))
+        signer_key = G2Element.from_bytes(bytes.fromhex(AGGREGATOR["public_key"]))
         message_bytes = message.encode('utf-8')
         return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
     except Exception as e:
@@ -71,14 +101,10 @@ def sign_message(message):
 # Endpoint to check the current node status
 @app.route('/status', methods=['GET'])
 def status():
-    timestamp = int(time.time())
-    status_message = f"{NODE_ID},up,{timestamp}"
-    signature = sign_message(status_message)
     return jsonify({
         "node_id": NODE_ID,
         "status": "up",
-        "timestamp": timestamp,
-        "signature": base64.b64encode(bytes(signature)).decode('utf-8')
+        "timestamp": int(time.time()),
     })
 
 # Endpoint to check the status of another node
@@ -96,7 +122,6 @@ def check_node():
             "status": target_status['status'],
             "timestamp": target_status['timestamp'],
             "signature": base64.b64encode(bytes(signature)).decode('utf-8'),
-            "public_key": bytes(PUBLIC_KEY).hex()
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -108,8 +133,14 @@ def read_from_sequencer():
             proofs = json.loads(batch)
             for proof in proofs:
                 message = f"{proof['node_id']},{proof['status']},{proof['timestamp']}"
-                if verify_message(message, proof['signature'], proof['signer']):
-                    log_state(proof['node_id'], proof['status'], proof['timestamp'], proof['signature'])
+                if verify_message(message, proof['signature']):
+                    log_state(proof['node_id'], 
+                              proof['status'], 
+                              proof['timestamp'], 
+                              proof['signature'],
+                              proof['aggregated_signature'],
+                              proof['aggregated_public_key'],
+                              proof['signers'])
                     print(f"Proof verified and logged: {proof}")
         time.sleep(5)
 
