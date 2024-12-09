@@ -1,7 +1,3 @@
-Here’s the updated README with improved clarity, additional details for the rewritten scripts, and a refreshed structure:
-
----
-
 # Decentralized Node Downtime Monitoring System
 
 This project implements a **Decentralized Node Downtime Monitoring System** leveraging **Zellular Infrastructure** to achieve consensus on node uptime and downtime. It uses threshold signatures for fault tolerance and ensures a consistent state across all participating nodes.
