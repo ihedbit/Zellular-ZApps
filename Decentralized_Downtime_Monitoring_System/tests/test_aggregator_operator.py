@@ -8,22 +8,35 @@ from operator import sign_message
 # Mock Data
 NODE_URL = "http://127.0.0.1:5001"
 MOCK_OPERATORS = {
-    "operator_1": {
+    "operator_1_id": {
         "socket": "http://127.0.0.1:5001",
         "public_key": "abcd1234..."  # Replace with actual public key (hex)
     },
-    "operator_2": {
+    "operator_2_id": {
         "socket": "http://127.0.0.1:5002",
         "public_key": "efgh5678..."  # Replace with actual public key (hex)
     },
 }
 
 # Unit Tests for Aggregator
-def test_query_node_status():
+def test_query_node_status(monkeypatch):
     """Test querying a node's status."""
+    def mock_get(*args, **kwargs):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+            def json(self):
+                return {
+                    "node_id": "operator_1_id",
+                    "status": "up",
+                    "timestamp": 1234567890
+                }
+        return MockResponse()
+
+    monkeypatch.setattr(requests, "get", mock_get)
     response = query_node_status(NODE_URL)
-    assert "node_id" in response
-    assert "status" in response
+    assert response["node_id"] == "operator_1_id"
+    assert response["status"] == "up"
     assert "timestamp" in response
 
 def test_collect_signatures(monkeypatch):
@@ -34,12 +47,13 @@ def test_collect_signatures(monkeypatch):
                 self.status_code = 200
             def json(self):
                 return {
-                    "node_id": "operator_1",
-                    "status": "up",
+                    "node_id": "operator_1_id",
+                    "status": "down",
                     "timestamp": 1234567890,
                     "signature": base64.b64encode(b"mock_signature").decode()
                 }
         return MockResponse()
+
     monkeypatch.setattr(requests, "post", mock_post)
     signatures, signers = collect_signatures(NODE_URL)
     assert len(signatures) > 0
@@ -47,25 +61,48 @@ def test_collect_signatures(monkeypatch):
 
 def test_aggregate_signatures():
     """Test aggregating multiple signatures."""
-    mock_signatures = [{"signature": base64.b64encode(b"mock_sig").decode()}]
+    mock_signatures = [{"signature": base64.b64encode(G2Element().to_bytes()).decode()}]
     agg_sig = aggregate_signatures(mock_signatures)
-    assert agg_sig is not None
+    assert isinstance(agg_sig, G2Element)
 
-def test_aggregate_public_keys():
+def test_aggregate_public_keys(monkeypatch):
     """Test aggregating public keys."""
-    mock_signers = ["operator_1", "operator_2"]
-    agg_pub_key = aggregate_public_keys(mock_signers)
-    assert agg_pub_key is not None
+    mock_signers = ["operator_1_id", "operator_2_id"]
+    mock_signatures = [
+        {
+            "node_id": "operator_1_id",
+            "signature": base64.b64encode(G2Element().to_bytes()).decode()
+        },
+        {
+            "node_id": "operator_2_id",
+            "signature": base64.b64encode(G2Element().to_bytes()).decode()
+        }
+    ]
+
+    agg_pub_key = aggregate_public_keys(mock_signatures, mock_signers)
+    assert isinstance(agg_pub_key, G1Element)
 
 # Unit Tests for Operator
-def test_operator_status():
+def test_operator_status(monkeypatch):
     """Test the operator's status endpoint."""
+    def mock_get(*args, **kwargs):
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+            def json(self):
+                return {
+                    "node_id": "operator_1_id",
+                    "status": "up",
+                    "timestamp": 1234567890
+                }
+        return MockResponse()
+
+    monkeypatch.setattr(requests, "get", mock_get)
     response = requests.get(f"{NODE_URL}/status")
     assert response.status_code == 200
     json_data = response.json()
-    assert "node_id" in json_data
-    assert "status" in json_data
-    assert "timestamp" in json_data
+    assert json_data["node_id"] == "operator_1_id"
+    assert json_data["status"] == "up"
 
 def test_operator_check_node(monkeypatch):
     """Test the operator's check_node endpoint."""
@@ -75,14 +112,14 @@ def test_operator_check_node(monkeypatch):
                 self.status_code = 200
             def json(self):
                 return {
-                    "node_id": "operator_2",
+                    "node_id": "operator_2_id",
                     "status": "up",
                     "timestamp": 1234567890
                 }
         return MockResponse()
 
     monkeypatch.setattr(requests, "get", mock_get)
-    response = requests.post(f"{NODE_URL}/check_node", json={"node_url": "http://127.0.0.1:5002"})
+    response = requests.post(f"{NODE_URL}/check_node", json={"node_id": "operator_2_id"})
     assert response.status_code == 200
     json_data = response.json()
     assert "node_id" in json_data
@@ -105,7 +142,7 @@ def test_integration(monkeypatch):
                 self.status_code = 200
             def json(self):
                 return {
-                    "node_id": "operator_1",
+                    "node_id": "operator_1_id",
                     "status": "down",
                     "timestamp": 1234567890
                 }
@@ -117,10 +154,10 @@ def test_integration(monkeypatch):
                 self.status_code = 200
             def json(self):
                 return {
-                    "node_id": "operator_2",
+                    "node_id": "operator_2_id",
                     "status": "down",
                     "timestamp": 1234567890,
-                    "signature": base64.b64encode(b"mock_signature").decode()
+                    "signature": base64.b64encode(G2Element().to_bytes()).decode()
                 }
         return MockResponse()
 
@@ -132,6 +169,6 @@ def test_integration(monkeypatch):
     assert target_status["status"] == "down"
     signatures, signers = collect_signatures(NODE_URL)
     agg_sig = aggregate_signatures(signatures)
-    agg_pub_key = aggregate_public_keys(signers)
+    agg_pub_key = aggregate_public_keys(signatures, signers)
     assert agg_sig is not None
     assert agg_pub_key is not None

@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 # SQLite Database Configuration
 DATABASE = 'operator.db'
-NODE_ID = "node_1"
+NODE_ID = "operator_1_id"
 
 # Generate BLS keys for the operator
 SEED = b"your_unique_seed_for_this_operator"
@@ -27,26 +27,17 @@ zellular = Zellular(APP_NAME, BASE_URLS[0])
 
 # Hardcoded operator details
 OPERATORS = {
-    "operator_1": {
+    "operator_1_id": {
         "socket": "http://127.0.0.1:5001",  # Example socket
         "public_key": "abcd1234..."  # Replace with the actual public key in hex
     },
-    "operator_2": {
+    "operator_2_id": {
         "socket": "http://127.0.0.1:5002",
         "public_key": "efgh5678..."
-    },
-    "aggregator": {
-        "socket": "http://127.0.0.1:5002",
-        "public_key": "efgh5678..."
-    },
+    }
     # Add more operators as needed
 }
 
-# Hardcoded aggregator details
-AGGREGATOR = {
-    "socket": "http://127.0.0.1:5002",
-    "public_key": "efgh5678..."
-}
 
 # Initialize the SQLite database
 def init_db():
@@ -83,12 +74,17 @@ def log_state(node_id, status, timestamp, signature, aggregated_public_key, sign
     conn.close()
 
 # Verify a proof from the sequencer
-def verify_message(message, signature):
+def verify_message(message, signature,signers,signers_aggregated_public_key):
     try:
-        signature_bytes = base64.b64decode(signature)
-        signer_key = G2Element.from_bytes(bytes.fromhex(AGGREGATOR["public_key"]))
-        message_bytes = message.encode('utf-8')
-        return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
+        aggregated_public_key = [OPERATORS[operator_id]["public_key"] for operator_id in signers]
+        if aggregated_public_key == signers_aggregated_public_key:
+            signature_bytes = base64.b64decode(signature)
+            signer_key = G2Element.from_bytes(bytes.fromhex(aggregated_public_key))
+            message_bytes = message.encode('utf-8')
+            return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
+        else:
+            return False
+        
     except Exception as e:
         print(f"Verification failed: {e}")
         return False
@@ -133,7 +129,7 @@ def read_from_sequencer():
             proofs = json.loads(batch)
             for proof in proofs:
                 message = f"{proof['node_id']},{proof['status']},{proof['timestamp']}"
-                if verify_message(message, proof['signature']):
+                if verify_message(message, proof['signature'],proof['signers'],proof['aggregated_public_key']):
                     log_state(proof['node_id'], 
                               proof['status'], 
                               proof['timestamp'], 
