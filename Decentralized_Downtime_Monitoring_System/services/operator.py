@@ -29,15 +29,30 @@ zellular = Zellular(APP_NAME, BASE_URLS[0])
 OPERATORS = {
     "operator_1_id": {
         "socket": "http://127.0.0.1:5001",  # Example socket
-        "public_key": "abcd1234..."  # Replace with the actual public key in hex
+        "public_key": "0x1e6f881f4ac78b120e4d00adfe9b205bc12379b710cc941207c918ac65a8caa9268d4e406df4b33f19bb82820c74b938f522fa8c4b6f68763e67bbfd07ee45e4"  # Replace with the actual public key in hex
     },
     "operator_2_id": {
         "socket": "http://127.0.0.1:5002",
-        "public_key": "efgh5678..."
-    }
+        "public_key": "0x7ac3957dfb95f0c876062c442f6f81cc8d51d573b848e77f8a75f1f0ab8b5199d6b8b03d29a0acb61cde264c69c79872fd383d8f24c28dff5d865285d144e100fd"
+    },
+    "operator_3_id": {
+        "socket": "http://127.0.0.1:5003",
+        "public_key": "0x89cd32f469874b4248c5de2400e33f3c3b2b51e358387fe5b85e1f98a309350559003ee70c8405d0df0f7da61172ec6f6d79ff4586ef3d9f728cf57823cc515c"
+    },
+    "operator_4_id": {
+        "socket": "http://127.0.0.1:5004",
+        "public_key": "0x9e3b0410577a77c0880c367d8a163a3c19e63e12b4e438e88b3981be88c3db23f17e4da9025ffcd74632a263f26e7983a9ec6de115e9dce825b20713aaf7bc7a6"
+    },
     # Add more operators as needed
 }
 
+# Hardcoded URL to ID
+URLMAP = {
+    "http://127.0.0.1:5001" : "operator_1_id",
+    "http://127.0.0.1:5002" : "operator_2_id",
+    "http://127.0.0.1:5003" : "operator_3_id",
+    "http://127.0.0.1:5004" : "operator_4_id"
+}
 
 # Initialize the SQLite database
 def init_db():
@@ -50,37 +65,60 @@ def init_db():
             status TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             signature TEXT NOT NULL,
-            signers TEXT NOT NULL
+            non_signers TEXT NOT NULL
         )
     ''')
     conn.commit()
     conn.close()
 
 # Log the node state to SQLite
-def log_state(node_id, status, timestamp, signature, aggregated_public_key, signers):
+def log_state(node_id, status, timestamp, signature, aggregated_public_key, non_signers):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     
     # Serialize the signers list as a JSON string
-    signers_json = json.dumps(signers)
+    non_signers_json = json.dumps(non_signers)
     
     cursor.execute('''
-        INSERT INTO logs (node_id, status, timestamp, signature, aggregated_public_key, signers)
+        INSERT INTO logs (node_id, status, timestamp, signature, aggregated_public_key, non_signers)
         VALUES (?, ?, ?, ?, ?, ?)
-    ''', (node_id, status, timestamp, signature, aggregated_public_key, signers_json))
+    ''', (node_id, status, timestamp, signature, aggregated_public_key, non_signers_json))
     
     conn.commit()
     conn.close()
 
-# Verify a proof from the sequencer
-def verify_message(message, signature,signers):
-    try:
-        aggregated_public_key = [OPERATORS[operator_id]["public_key"] for operator_id in signers]
-        signature_bytes = base64.b64decode(signature)
-        signer_key = G2Element.from_bytes(bytes.fromhex(aggregated_public_key))
-        message_bytes = message.encode('utf-8')
-        return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
+def aggregated_public_keys():
+    # Create a list of all public keys (G2Element instances)
+    public_key_list = [G2Element.from_bytes(bytes.fromhex(OPERATORS[operator_id]["public_key"][2:])) for operator_id in OPERATORS]
+    
+    # Sum of all public keys to form the aggregated public key
+    aggregated_key = G2Element()
+    for key in public_key_list:
+        aggregated_key += key
+    
+    return aggregated_key
+
         
+# Verify a proof from the sequencer
+def verify_message(message, signature, non_signers,aggregated_key):
+    try:
+        # Get the public keys of the non_signers
+        non_signers_public_key_list = [OPERATORS[operator_id]["public_key"] for operator_id in OPERATORS if operator_id in non_signers]
+        
+        # Decode the signature from base64
+        signature_bytes = base64.b64decode(signature)
+        
+        
+        # Subtract the non-signer's public key (for each non-signer)
+        for public_key_hex in non_signers_public_key_list:
+            non_signer_key = G2Element.from_bytes(bytes.fromhex(public_key_hex[2:]))  # Remove the '0x' prefix
+            aggregated_key -= non_signer_key  # Subtract non-signer's key
+        
+        # Convert the message to bytes
+        message_bytes = message.encode('utf-8')
+        
+        # Verify the signature using the adjusted aggregated public key
+        return AugSchemeMPL.verify(aggregated_key, message_bytes, G2Element.from_bytes(signature_bytes))
         
     except Exception as e:
         print(f"Verification failed: {e}")
@@ -121,18 +159,19 @@ def check_node():
 
 # Read and validate proofs from the sequencer
 def read_from_sequencer():
+    aggregated_key = aggregated_public_keys()
     while True:
         for batch, index in zellular.batches(after=0):
             proofs = json.loads(batch)
             for proof in proofs:
                 message = f"{proof['node_id']},{proof['status']},{proof['timestamp']}"
-                if verify_message(message, proof['signature'],proof['signers'],proof['aggregated_public_key']):
+                if verify_message(message, proof['signature'],proof['non_signers'],aggregated_key):
                     log_state(proof['node_id'], 
                               proof['status'], 
                               proof['timestamp'], 
                               proof['signature'],
                               proof['aggregated_signature'],
-                              proof['signers'])
+                              proof['non_signers'])
                     print(f"Proof verified and logged: {proof}")
         time.sleep(5)
 

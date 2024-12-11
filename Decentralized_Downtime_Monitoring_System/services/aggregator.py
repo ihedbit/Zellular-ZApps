@@ -16,11 +16,19 @@ THRESHOLD = 2  # Minimum number of valid signatures required
 OPERATORS = {
     "operator_1_id": {
         "socket": "http://127.0.0.1:5001",  # Example socket
-        "public_key": "abcd1234..."  # Replace with the actual public key in hex
+        "public_key": "0x1e6f881f4ac78b120e4d00adfe9b205bc12379b710cc941207c918ac65a8caa9268d4e406df4b33f19bb82820c74b938f522fa8c4b6f68763e67bbfd07ee45e4"  # Replace with the actual public key in hex
     },
     "operator_2_id": {
         "socket": "http://127.0.0.1:5002",
-        "public_key": "efgh5678..."
+        "public_key": "0x7ac3957dfb95f0c876062c442f6f81cc8d51d573b848e77f8a75f1f0ab8b5199d6b8b03d29a0acb61cde264c69c79872fd383d8f24c28dff5d865285d144e100fd"
+    },
+    "operator_3_id": {
+        "socket": "http://127.0.0.1:5003",
+        "public_key": "0x89cd32f469874b4248c5de2400e33f3c3b2b51e358387fe5b85e1f98a309350559003ee70c8405d0df0f7da61172ec6f6d79ff4586ef3d9f728cf57823cc515c"
+    },
+    "operator_4_id": {
+        "socket": "http://127.0.0.1:5004",
+        "public_key": "0x9e3b0410577a77c0880c367d8a163a3c19e63e12b4e438e88b3981be88c3db23f17e4da9025ffcd74632a263f26e7983a9ec6de115e9dce825b20713aaf7bc7a6"
     },
     # Add more operators as needed
 }
@@ -28,15 +36,11 @@ OPERATORS = {
 # Hardcoded URL to ID
 URLMAP = {
     "http://127.0.0.1:5001" : "operator_1_id",
-    "http://127.0.0.1:5002" : "operator_2_id"
+    "http://127.0.0.1:5002" : "operator_2_id",
+    "http://127.0.0.1:5003" : "operator_3_id",
+    "http://127.0.0.1:5004" : "operator_4_id"
 }
 
-
-# Hardcoded aggregator details
-AGGREGATOR = {
-    "socket": "http://127.0.0.1:5002",
-    "public_key": "efgh5678..."
-}
 
 # Query a node's status
 def query_node_status(node_url):
@@ -49,7 +53,7 @@ def query_node_status(node_url):
 # Collect signatures from other operators
 def collect_signatures(target_node_url):
     signatures = []
-    signers = []
+    non_signers = []
     for operator_url in BASE_URLS:
         if operator_url != target_node_url:
             try:
@@ -59,29 +63,17 @@ def collect_signatures(target_node_url):
                 )
                 if response.status_code == 200:
                     signatures.append(response.json())
-                    signers.append(URLMAP[target_node_url])
+                    
             except Exception as e:
+                non_signers.append(URLMAP[target_node_url])
                 print(f"Error requesting from {operator_url}: {e}")
-    return signatures,signers
+    return signatures,non_signers
 
 # Aggregate BLS signatures
 def aggregate_signatures(signatures):
     sigs = [G2Element.from_bytes(base64.b64decode(sig['signature'])) for sig in signatures]
     return AugSchemeMPL.aggregate(sigs)
 
-# Aggregate public keys
-def aggregate_public_keys(signers):
-    public_keys = []
-
-    for signer in signers:
-        operator = OPERATORS.get(signer)
-        if operator:
-            public_key_hex = operator["public_key"]
-            public_keys.append(G1Element.from_bytes(bytes.fromhex(public_key_hex)))
-
-    # Aggregate the public keys using sum, starting with a neutral G1Element()
-    aggregated_key = sum(public_keys, G1Element())
-    return aggregated_key
 
 # Submit events to the sequencer
 def submit_to_sequencer(event):
@@ -96,16 +88,15 @@ def main():
     for operator_url in BASE_URLS:
         if (target_status:=query_node_status(operator_url)['status']) == 'down':
             print(f"Node {target_status['node_id']} is down. Collecting proofs...")
-            signatures,signers = collect_signatures(operator_url)
+            signatures,non_signers = collect_signatures(operator_url)
             if len(signatures) >= THRESHOLD:
                 agg_sig = aggregate_signatures(signatures)
-                agg_pub_key = aggregate_public_keys(signers)
                 event = {
                     "node_id": target_status["node_id"],
                     "status": "down",
                     "timestamp": target_status["timestamp"],
                     "aggregated_signature": base64.b64encode(bytes(agg_sig)).decode('utf-8'),
-                    "signers" : signers,
+                    "non_signers" : non_signers,
                 }
                 submit_to_sequencer(event)
 
