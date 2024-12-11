@@ -50,7 +50,6 @@ def init_db():
             status TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             signature TEXT NOT NULL,
-            aggregated_public_key TEXT NOT NULL,
             signers TEXT NOT NULL
         )
     ''')
@@ -74,16 +73,14 @@ def log_state(node_id, status, timestamp, signature, aggregated_public_key, sign
     conn.close()
 
 # Verify a proof from the sequencer
-def verify_message(message, signature,signers,signers_aggregated_public_key):
+def verify_message(message, signature,signers):
     try:
         aggregated_public_key = [OPERATORS[operator_id]["public_key"] for operator_id in signers]
-        if aggregated_public_key == signers_aggregated_public_key:
-            signature_bytes = base64.b64decode(signature)
-            signer_key = G2Element.from_bytes(bytes.fromhex(aggregated_public_key))
-            message_bytes = message.encode('utf-8')
-            return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
-        else:
-            return False
+        signature_bytes = base64.b64decode(signature)
+        signer_key = G2Element.from_bytes(bytes.fromhex(aggregated_public_key))
+        message_bytes = message.encode('utf-8')
+        return AugSchemeMPL.verify(signer_key, message_bytes, G2Element.from_bytes(signature_bytes))
+        
         
     except Exception as e:
         print(f"Verification failed: {e}")
@@ -135,7 +132,6 @@ def read_from_sequencer():
                               proof['timestamp'], 
                               proof['signature'],
                               proof['aggregated_signature'],
-                              proof['aggregated_public_key'],
                               proof['signers'])
                     print(f"Proof verified and logged: {proof}")
         time.sleep(5)

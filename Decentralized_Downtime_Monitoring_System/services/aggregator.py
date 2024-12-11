@@ -105,7 +105,6 @@ def main():
                     "status": "down",
                     "timestamp": target_status["timestamp"],
                     "aggregated_signature": base64.b64encode(bytes(agg_sig)).decode('utf-8'),
-                    "aggregated_public_key": bytes(agg_pub_key).hex(),
                     "signers" : signers,
                 }
                 submit_to_sequencer(event)
