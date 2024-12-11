@@ -70,18 +70,15 @@ def aggregate_signatures(signatures):
     return AugSchemeMPL.aggregate(sigs)
 
 # Aggregate public keys
-def aggregate_public_keys(signatures,signers):
+def aggregate_public_keys(signers):
     public_keys = []
 
-    # Iterate over signers and find matching node_ids in signatures
     for signer in signers:
-        for signature in signatures:
-            if signer == signature["node_id"]:  # Match signer to signature's node_id
-                operator = OPERATORS.get(signer)
-                if operator:
-                    public_key_hex = operator["public_key"]
-                    public_keys.append(G1Element.from_bytes(bytes.fromhex(public_key_hex)))
-    
+        operator = OPERATORS.get(signer)
+        if operator:
+            public_key_hex = operator["public_key"]
+            public_keys.append(G1Element.from_bytes(bytes.fromhex(public_key_hex)))
+
     # Aggregate the public keys using sum, starting with a neutral G1Element()
     aggregated_key = sum(public_keys, G1Element())
     return aggregated_key
@@ -102,7 +99,7 @@ def main():
             signatures,signers = collect_signatures(operator_url)
             if len(signatures) >= THRESHOLD:
                 agg_sig = aggregate_signatures(signatures)
-                agg_pub_key = aggregate_public_keys(signatures,signers)
+                agg_pub_key = aggregate_public_keys(signers)
                 event = {
                     "node_id": target_status["node_id"],
                     "status": "down",
