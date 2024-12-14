@@ -52,7 +52,9 @@ PUBLIC_KEY = PRIVATE_KEY.get_g1()
 
 # Initialize Zellular
 APP_NAME = "avs-downtime-monitor"
-BASE_URLS = [op["socket"] for op in OPERATORS.values() if "socket" in op]
+ZELLULAR_OPERATORS = get_operators()
+BASE_URLS = [op["socket"] for op in ZELLULAR_OPERATORS.values() if "socket" in op]
+
 zellular = Zellular(APP_NAME, BASE_URLS[0])
 
 # Initialize the SQLite database
@@ -166,6 +168,7 @@ def check_node():
 # Read and validate proofs from the sequencer
 def read_from_sequencer():
     aggregated_key = aggregated_public_keys()
+    
     while True:
         for batch, index in zellular.batches(after=0):
             proofs = json.loads(batch)
