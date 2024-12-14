@@ -16,7 +16,7 @@ THRESHOLD = 2  # Minimum number of valid signatures required
 OPERATORS = {
     "operator_1_id": {
         "socket": "http://127.0.0.1:5001",  # Example socket
-        "public_key": "0x1e6f881f4ac78b120e4d00adfe9b205bc12379b710cc941207c918ac65a8caa9268d4e406df4b33f19bb82820c74b938f522fa8c4b6f68763e67bbfd07ee45e4"  # Replace with the actual public key in hex
+        "public_key": "0x1e6f881f4ac78b120e4d00adfe9b205bc12379b710cc941207c918ac65a8caa9268d4e406df4b33f19bb82820c74b938f522fa8c4b6f68763e67bbfd07ee45e4"  
     },
     "operator_2_id": {
         "socket": "http://127.0.0.1:5002",

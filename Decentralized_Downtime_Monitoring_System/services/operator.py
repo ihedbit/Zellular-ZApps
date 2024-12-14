@@ -1,5 +1,6 @@
+import sys
 from flask import Flask, request, jsonify
-from blspy import PrivateKey, AugSchemeMPL, G2Element
+from blspy import PrivateKey, AugSchemeMPL, G2Element,G1Element
 from zellular import Zellular, get_operators
 import sqlite3
 import base64
@@ -10,38 +11,23 @@ from threading import Thread
 
 app = Flask(__name__)
 
-# SQLite Database Configuration
-DATABASE = 'operator.db'
-NODE_ID = "operator_1_id"
-
-# Generate BLS keys for the operator
-SEED = b"your_unique_seed_for_this_operator"
-PRIVATE_KEY = AugSchemeMPL.key_gen(SEED)
-PUBLIC_KEY = PRIVATE_KEY.get_g1()
-
-# Initialize Zellular
-APP_NAME = "avs-downtime-monitor"
-OPERATORS = get_operators()  # Fetch the list of operators
-BASE_URLS = [op["socket"] for op in OPERATORS.values() if "socket" in op]
-zellular = Zellular(APP_NAME, BASE_URLS[0])
-
 # Hardcoded operator details
 OPERATORS = {
     "operator_1_id": {
-        "socket": "http://127.0.0.1:5001",  # Example socket
-        "public_key": "0x1e6f881f4ac78b120e4d00adfe9b205bc12379b710cc941207c918ac65a8caa9268d4e406df4b33f19bb82820c74b938f522fa8c4b6f68763e67bbfd07ee45e4"  # Replace with the actual public key in hex
+        "socket": "http://127.0.0.1:5001",
+        "public_key": "a08e52124e2192788164bd06e71287499ce167cc0a7b98bb9a7c27519662eb478bcdf4e53f7468557b617152cf359bea"
     },
     "operator_2_id": {
         "socket": "http://127.0.0.1:5002",
-        "public_key": "0x7ac3957dfb95f0c876062c442f6f81cc8d51d573b848e77f8a75f1f0ab8b5199d6b8b03d29a0acb61cde264c69c79872fd383d8f24c28dff5d865285d144e100fd"
+        "public_key": "a9b5d8b9dffc550cabc7729e999c188160e3f019787b2f1f93f770267ac851422c4651a0274d92f93067f952a9b7b012"
     },
     "operator_3_id": {
         "socket": "http://127.0.0.1:5003",
-        "public_key": "0x89cd32f469874b4248c5de2400e33f3c3b2b51e358387fe5b85e1f98a309350559003ee70c8405d0df0f7da61172ec6f6d79ff4586ef3d9f728cf57823cc515c"
+        "public_key": "8255bbca4f620830cbb6c1f30f13b65506d516aeb724433ba0931ed3379dbc9e6ad880a75a66f5aa40a73d507755b879"
     },
     "operator_4_id": {
         "socket": "http://127.0.0.1:5004",
-        "public_key": "0x9e3b0410577a77c0880c367d8a163a3c19e63e12b4e438e88b3981be88c3db23f17e4da9025ffcd74632a263f26e7983a9ec6de115e9dce825b20713aaf7bc7a6"
+        "public_key": "87f745ee77dd2fe55da523eec6ab38d497589eb307e1e253cec89aa22bebb066d86066192270a140bcc5ae38e79f8cd4"
     },
     # Add more operators as needed
 }
@@ -53,6 +39,21 @@ URLMAP = {
     "http://127.0.0.1:5003" : "operator_3_id",
     "http://127.0.0.1:5004" : "operator_4_id"
 }
+
+# SQLite Database Configuration
+DATABASE = 'operator.db'
+NODE_ID = sys.argv[1]  # Node ID passed as a command-line argument
+PORT = int(sys.argv[2])  # Port number passed as a command-line argument
+
+# Generate BLS keys for the operator
+SEED = b"seed_related_to_zellular_operator_4_id"
+PRIVATE_KEY = AugSchemeMPL.key_gen(SEED)
+PUBLIC_KEY = PRIVATE_KEY.get_g1()
+
+# Initialize Zellular
+APP_NAME = "avs-downtime-monitor"
+BASE_URLS = [op["socket"] for op in OPERATORS.values() if "socket" in op]
+zellular = Zellular(APP_NAME, BASE_URLS[0])
 
 # Initialize the SQLite database
 def init_db():
@@ -88,38 +89,43 @@ def log_state(node_id, status, timestamp, signature, aggregated_public_key, non_
     conn.close()
 
 def aggregated_public_keys():
-    # Create a list of all public keys (G2Element instances)
-    public_key_list = [G2Element.from_bytes(bytes.fromhex(OPERATORS[operator_id]["public_key"][2:])) for operator_id in OPERATORS]
+    public_key_list = []
+    for operator_id, details in OPERATORS.items():
+        try:
+            
+            public_key_bytes = bytes.fromhex(details["public_key"])  # No prefix assumed
+            if len(public_key_bytes) != G1Element.SIZE:
+                raise ValueError(f"Invalid public key length for {operator_id}: {len(public_key_bytes)} bytes")
+            public_key_list.append(G1Element.from_bytes(public_key_bytes))
+        except Exception as e:
+            print(f"Error processing public key for {operator_id}: {e}")
     
-    # Sum of all public keys to form the aggregated public key
-    aggregated_key = G2Element()
-    for key in public_key_list:
-        aggregated_key += key
-    
+    # Aggregate all valid public keys
+    aggregated_key = sum(public_key_list, G1Element())
     return aggregated_key
+
 
         
 # Verify a proof from the sequencer
-def verify_message(message, signature, non_signers,aggregated_key):
+def verify_message(message, signature, non_signers, aggregated_key):
     try:
-        # Get the public keys of the non_signers
-        non_signers_public_key_list = [OPERATORS[operator_id]["public_key"] for operator_id in OPERATORS if operator_id in non_signers]
+        # Get the public keys of the non-signers
+        non_signers_public_key_list = [OPERATORS[operator_id]["public_key"] for operator_id in non_signers]
         
-        # Decode the signature from base64
-        signature_bytes = base64.b64decode(signature)
-        
-        
-        # Subtract the non-signer's public key (for each non-signer)
+        # Adjust the aggregated key by removing non-signers' keys
         for public_key_hex in non_signers_public_key_list:
-            non_signer_key = G2Element.from_bytes(bytes.fromhex(public_key_hex[2:]))  # Remove the '0x' prefix
-            aggregated_key -= non_signer_key  # Subtract non-signer's key
+            non_signer_key = G1Element.from_bytes(bytes.fromhex(public_key_hex))  # Adjust to G1Element
+            aggregated_key -= non_signer_key
         
-        # Convert the message to bytes
+        # Verify the signature
         message_bytes = message.encode('utf-8')
         
-        # Verify the signature using the adjusted aggregated public key
-        return AugSchemeMPL.verify(aggregated_key, message_bytes, G2Element.from_bytes(signature_bytes))
+        # `signature` should be a G2Element, so ensure it's deserialized if passed as a string
+        if isinstance(signature, str):
+            signature = G2Element.from_bytes(base64.b64decode(signature))
         
+        # Perform verification
+        return AugSchemeMPL.verify(aggregated_key, message_bytes, signature)
     except Exception as e:
         print(f"Verification failed: {e}")
         return False
@@ -178,4 +184,4 @@ def read_from_sequencer():
 if __name__ == '__main__':
     init_db()
     Thread(target=read_from_sequencer, daemon=True).start()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=PORT)
